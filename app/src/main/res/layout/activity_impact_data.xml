@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:id="@+id/currentValueTextView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Current Value: N/A"
+        android:textSize="20sp"
+        android:layout_marginBottom="8dp"/>
+
+    <TextView
+        android:id="@+id/peakValueTextView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Peak Value: N/A"
+        android:textSize="20sp"
+        android:layout_marginBottom="8dp"/>
+
+    <TextView
+        android:id="@+id/tbiWarningTextView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="TBI Warning: N/A"
+        android:textSize="20sp"
+        android:layout_marginBottom="16dp"/>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="16dp">
+
+        <Button
+            android:id="@+id/toggleReadingButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Start Reading"
+            android:layout_marginEnd="8dp"/>
+
+        <Button
+            android:id="@+id/reconnectButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Reconnect"
+            android:layout_marginEnd="8dp"/>
+
+        <Button
+            android:id="@+id/exportButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Export CSV"/>
+
+    </LinearLayout>
+
+    <com.github.mikephil.charting.charts.LineChart
+        android:id="@+id/chart"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginBottom="16dp"/>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <TextView
+            android:id="@+id/logTextView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="14sp"/>
+
+    </ScrollView>
+
+</LinearLayout>
