@@ -17,10 +17,10 @@ class Bluetooth private constructor() {
         @Volatile
         private var instance: Bluetooth? = null
         private const val TAG = "Bluetooth"
-        private const val MAX_RECONNECT_ATTEMPTS = 3
-        private const val RECONNECT_DELAY = 5000L // 5 seconds
-        private const val CONNECTION_TIMEOUT = 30000L // 30 seconds
-        private const val MAX_BUFFER_SIZE = 10 * 1024 * 1024 // 10 MB
+        private const val MAX_RECONNECT_ATTEMPTS = 5 // Increased for background operation
+        private const val RECONNECT_DELAY = 10000L // Increased to 10 seconds
+        private const val CONNECTION_TIMEOUT = 30000L
+        private const val MAX_BUFFER_SIZE = 10 * 1024 * 1024
 
         fun getInstance(): Bluetooth {
             return instance ?: synchronized(this) {
@@ -42,6 +42,7 @@ class Bluetooth private constructor() {
     private var reconnectAttempts = 0
     private var lastConnectedDeviceAddress: String? = null
     private var applicationContext: Context? = null
+    private var autoReconnect = true
 
     private val dataBuffer = ConcurrentLinkedQueue<ByteArray>()
     private var bufferSize = 0
@@ -106,10 +107,10 @@ class Bluetooth private constructor() {
     fun connectToDevice(context: Context, address: String) {
         val device = bluetoothAdapter.getRemoteDevice(address)
         lastConnectedDeviceAddress = address
-        bluetoothGatt = device.connectGatt(context, false, gattCallback)
+        autoReconnect = true
+        bluetoothGatt = device.connectGatt(context, true, gattCallback, BluetoothDevice.TRANSPORT_LE)
         Log.d(TAG, "Attempting to connect to device: $address")
 
-        // Set up connection timeout
         handler.postDelayed({
             if (!isConnected) {
                 Log.e(TAG, "Connection timeout. Disconnecting...")
@@ -120,6 +121,7 @@ class Bluetooth private constructor() {
     }
 
     fun disconnect() {
+        autoReconnect = false
         bluetoothGatt?.disconnect()
         Log.d(TAG, "Disconnecting from GATT server")
     }
@@ -158,13 +160,15 @@ class Bluetooth private constructor() {
                 onConnectionStateChange?.invoke(true)
                 Log.d(TAG, "Connected to GATT server")
                 
-                // Automatically discover services upon connection
                 discoverServices()
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 isConnected = false
                 onConnectionStateChange?.invoke(false)
                 Log.d(TAG, "Disconnected from GATT server")
-                applicationContext?.let { attemptReconnect(it) }
+                
+                if (autoReconnect) {
+                    applicationContext?.let { attemptReconnect(it) }
+                }
             }
         }
 
@@ -240,16 +244,20 @@ class Bluetooth private constructor() {
             Log.d(TAG, "Attempting to reconnect. Attempt $reconnectAttempts of $MAX_RECONNECT_ATTEMPTS")
             handler.postDelayed({
                 lastConnectedDeviceAddress?.let { address ->
-                    connectToDevice(context, address)
+                    if (autoReconnect) {
+                        connectToDevice(context, address)
+                    }
                 }
             }, RECONNECT_DELAY)
         } else {
             Log.e(TAG, "Max reconnection attempts reached")
+            autoReconnect = false
         }
     }
 
     fun manualReconnect(context: Context) {
         reconnectAttempts = 0
+        autoReconnect = true
         Log.d(TAG, "Manual reconnection triggered")
         lastConnectedDeviceAddress?.let { address ->
             connectToDevice(context, address)

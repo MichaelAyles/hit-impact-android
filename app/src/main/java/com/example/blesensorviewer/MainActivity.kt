@@ -38,6 +38,7 @@ class MainActivity : AppCompatActivity() {
                 scanActivityLauncher.launch(Intent(this, ScanActivity::class.java))
             } else {
                 bluetooth.disconnect()
+                stopBluetoothService()
                 isConnected = false
                 updateButtonStates()
                 Toast.makeText(this, "Disconnected", Toast.LENGTH_SHORT).show()
@@ -58,8 +59,15 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 isConnected = connected
                 updateButtonStates()
+                if (!connected) {
+                    stopBluetoothService()
+                }
             }
         }
+    }
+
+    private fun stopBluetoothService() {
+        stopService(Intent(this, BluetoothService::class.java))
     }
 
     private fun updateButtonStates() {
