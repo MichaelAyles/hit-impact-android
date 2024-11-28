@@ -8,19 +8,32 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData
 import java.util.*
 import java.util.concurrent.ConcurrentLinkedQueue
 
 class Bluetooth private constructor() {
 
+    data class SensorData(
+        val currentValue: Float = 0f,
+        val peakValue: Float = 0f,
+        val sampleCount: Int = 0,
+        val timestamp: Long = System.currentTimeMillis()
+    )
+
+    private val _sensorData = MutableLiveData(SensorData())
+    val sensorData: LiveData<SensorData> = _sensorData
+
     companion object {
         @Volatile
         private var instance: Bluetooth? = null
         private const val TAG = "Bluetooth"
-        private const val MAX_RECONNECT_ATTEMPTS = 5 // Increased for background operation
-        private const val RECONNECT_DELAY = 10000L // Increased to 10 seconds
+        private const val MAX_RECONNECT_ATTEMPTS = 5
+        private const val RECONNECT_DELAY = 10000L
         private const val CONNECTION_TIMEOUT = 30000L
         private const val MAX_BUFFER_SIZE = 10 * 1024 * 1024
+        private const val TARGET_DEVICE_ID = "e5209eeb8b88"
 
         fun getInstance(): Bluetooth {
             return instance ?: synchronized(this) {
@@ -64,12 +77,23 @@ class Bluetooth private constructor() {
         bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         bluetoothAdapter = bluetoothManager.adapter
         bluetoothLeScanner = bluetoothAdapter.bluetoothLeScanner
+        startScan()
     }
 
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             val device = result.device
             val deviceName = device.name ?: ""
+            val address = device.address.replace(":", "").toLowerCase()
+            
+            if (address == TARGET_DEVICE_ID) {
+                stopScan()
+                applicationContext?.let { context ->
+                    connectToDevice(context, device.address)
+                }
+                return
+            }
+            
             if (deviceName.contains(deviceNameFilter, ignoreCase = true)) {
                 val existingDeviceIndex = deviceList.indexOfFirst { it.address == device.address }
                 val bleDevice = BleDevice(device.name, device.address, result.rssi)
@@ -89,6 +113,9 @@ class Bluetooth private constructor() {
             deviceList.clear()
             handler.postDelayed({
                 stopScan()
+                if (!isConnected && lastConnectedDeviceAddress == null) {
+                    handler.postDelayed({ startScan() }, RECONNECT_DELAY)
+                }
             }, SCAN_PERIOD)
             scanning = true
             bluetoothLeScanner.startScan(scanCallback)
@@ -116,14 +143,22 @@ class Bluetooth private constructor() {
                 Log.e(TAG, "Connection timeout. Disconnecting...")
                 disconnect()
                 onConnectionStateChange?.invoke(false)
+                startScan()
             }
         }, CONNECTION_TIMEOUT)
     }
 
     fun disconnect() {
         autoReconnect = false
-        bluetoothGatt?.disconnect()
-        Log.d(TAG, "Disconnecting from GATT server")
+        bluetoothGatt?.let { gatt ->
+            gatt.disconnect()
+            gatt.close()
+            bluetoothGatt = null
+        }
+        isConnected = false
+        onConnectionStateChange?.invoke(false)
+        _sensorData.postValue(SensorData()) // Reset sensor data on disconnect
+        Log.d(TAG, "Disconnecting and cleaning up GATT resources")
     }
 
     fun discoverServices() {
@@ -132,6 +167,16 @@ class Bluetooth private constructor() {
     }
 
     fun isConnected(): Boolean {
+        val deviceConnected = bluetoothGatt?.let { gatt ->
+            bluetoothManager.getConnectionState(gatt.device, BluetoothProfile.GATT) == BluetoothProfile.STATE_CONNECTED
+        } ?: false
+        
+        if (isConnected && !deviceConnected) {
+            isConnected = false
+            onConnectionStateChange?.invoke(false)
+            _sensorData.postValue(SensorData()) // Reset sensor data on disconnect
+        }
+        
         return isConnected
     }
 
@@ -166,6 +211,10 @@ class Bluetooth private constructor() {
                 onConnectionStateChange?.invoke(false)
                 Log.d(TAG, "Disconnected from GATT server")
                 
+                gatt.close()
+                bluetoothGatt = null
+                _sensorData.postValue(SensorData()) // Reset sensor data on disconnect
+                
                 if (autoReconnect) {
                     applicationContext?.let { attemptReconnect(it) }
                 }
@@ -176,6 +225,15 @@ class Bluetooth private constructor() {
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 onServicesDiscovered?.invoke(gatt.services)
                 Log.d(TAG, "Services discovered")
+                
+                gatt.services.forEach { service ->
+                    service.characteristics.forEach { characteristic ->
+                        if (characteristic.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0) {
+                            setCharacteristicNotification(characteristic, true)
+                            return@forEach
+                        }
+                    }
+                }
             } else {
                 Log.e(TAG, "Service discovery failed with status: $status")
             }
@@ -220,6 +278,19 @@ class Bluetooth private constructor() {
         }
         dataBuffer.offer(data)
         bufferSize += data.size
+
+        // Process sensor data
+        if (data.isNotEmpty()) {
+            val currentValue = data[0].toUByte().toFloat()
+            val currentData = _sensorData.value ?: SensorData()
+            val newData = currentData.copy(
+                currentValue = currentValue,
+                peakValue = maxOf(currentValue, currentData.peakValue),
+                sampleCount = currentData.sampleCount + 1,
+                timestamp = System.currentTimeMillis()
+            )
+            _sensorData.postValue(newData)
+        }
     }
 
     fun getBufferedData(): ByteArray {
@@ -252,6 +323,7 @@ class Bluetooth private constructor() {
         } else {
             Log.e(TAG, "Max reconnection attempts reached")
             autoReconnect = false
+            startScan()
         }
     }
 

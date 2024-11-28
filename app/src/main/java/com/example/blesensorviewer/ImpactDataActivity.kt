@@ -11,6 +11,7 @@ import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.Observer
 import com.github.mikephil.charting.charts.LineChart
 import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.LineData
@@ -20,7 +21,6 @@ import java.io.FileWriter
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.CopyOnWriteArrayList
-import kotlin.math.max
 
 class ImpactDataActivity : AppCompatActivity() {
 
@@ -40,9 +40,6 @@ class ImpactDataActivity : AppCompatActivity() {
     private var isReading = false
     private val handler = Handler(Looper.getMainLooper())
     private val readInterval = 50L // 50ms
-    private var lastReadTime = 0L
-    private var peakValue = 0
-    private var currentValue = 0
     private val tbiThreshold = 60
     private val logEntries = CopyOnWriteArrayList<Pair<Long, Int>>()
 
@@ -51,7 +48,24 @@ class ImpactDataActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "ImpactDataActivity"
-        private const val MAX_DATA_POINTS = 1000 // Maximum number of data points to show on the chart
+        private const val MAX_DATA_POINTS = 1000
+    }
+
+    private val sensorDataObserver = Observer<Bluetooth.SensorData> { sensorData ->
+        updateUI(sensorData)
+        logChange("Value", sensorData.currentValue.toInt().toString())
+        logEntries.add(Pair(sensorData.timestamp, sensorData.currentValue.toInt()))
+        
+        // Trim logEntries if it exceeds MAX_DATA_POINTS
+        while (logEntries.size > MAX_DATA_POINTS) {
+            logEntries.removeAt(0)
+        }
+
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastChartUpdateTime >= chartUpdateInterval) {
+            updateChart()
+            lastChartUpdateTime = currentTime
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -81,16 +95,15 @@ class ImpactDataActivity : AppCompatActivity() {
             exportToCsv()
         }
 
-        bluetooth.onCharacteristicChanged = { characteristic ->
-            handleCharacteristicChange(characteristic)
-        }
-
         bluetooth.onConnectionStateChange = { isConnected ->
             handleConnectionStateChange(isConnected)
         }
 
         initializeCharacteristic()
         setupChart()
+
+        // Start observing sensor data
+        bluetooth.sensorData.observe(this, sensorDataObserver)
     }
 
     private fun initializeCharacteristic() {
@@ -151,42 +164,12 @@ class ImpactDataActivity : AppCompatActivity() {
         }
     }
 
-    private fun handleCharacteristicChange(characteristic: BluetoothGattCharacteristic) {
-        val currentTime = System.currentTimeMillis()
-        val value = characteristic.getIntValue(BluetoothGattCharacteristic.FORMAT_UINT8, 0) ?: 0
+    private fun updateUI(sensorData: Bluetooth.SensorData) {
+        currentValueTextView.text = "Current Value: ${sensorData.currentValue.toInt()}"
+        peakValueTextView.text = "Peak Value: ${sensorData.peakValue.toInt()}"
 
-        if (currentTime - lastReadTime > 50) {
-            currentValue = 0
-            logChange("Value", "0")
-        } else {
-            currentValue = value
-            peakValue = max(peakValue, value)
-            logChange("Value", value.toString())
-        }
-
-        lastReadTime = currentTime
-        logEntries.add(Pair(currentTime, currentValue))
-
-        // Trim logEntries if it exceeds MAX_DATA_POINTS
-        while (logEntries.size > MAX_DATA_POINTS) {
-            logEntries.removeAt(0)
-        }
-
-        runOnUiThread {
-            updateUI()
-            if (currentTime - lastChartUpdateTime >= chartUpdateInterval) {
-                updateChart()
-                lastChartUpdateTime = currentTime
-            }
-        }
-    }
-
-    private fun updateUI() {
-        currentValueTextView.text = "Current Value: $currentValue"
-        peakValueTextView.text = "Peak Value: $peakValue"
-
-        val warningText = if (peakValue > tbiThreshold) "Warning" else "Safe"
-        tbiWarningTextView.text = "TBI Warning: $warningText (Peak: $peakValue)"
+        val warningText = if (sensorData.peakValue > tbiThreshold) "Warning" else "Safe"
+        tbiWarningTextView.text = "TBI Warning: $warningText (Peak: ${sensorData.peakValue.toInt()})"
     }
 
     private fun logChange(characteristicName: String, value: String) {
@@ -277,6 +260,7 @@ class ImpactDataActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         stopReading()
+        bluetooth.sensorData.removeObserver(sensorDataObserver)
         bluetooth.disconnect()
     }
 }

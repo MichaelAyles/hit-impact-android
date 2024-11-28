@@ -57,9 +57,16 @@ class ScanActivity : AppCompatActivity() {
                     setResult(RESULT_OK)
                     finish()
                 } else {
-                    Toast.makeText(this, "Failed to connect", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Connection lost, attempting to reconnect...", Toast.LENGTH_SHORT).show()
                 }
             }
+        }
+
+        // Start scanning immediately if we have permissions
+        if (hasRequiredPermissions()) {
+            startScan()
+        } else {
+            requestPermissions()
         }
     }
 

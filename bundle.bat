@@ -9,39 +9,43 @@ rem Create output folder
 set "OUTPUT_FOLDER=output%TIMESTAMP%"
 mkdir %OUTPUT_FOLDER%
 
-rem Copy build.gradle.kts
-copy "app\build.gradle.kts" "%OUTPUT_FOLDER%\build.gradle.kts.txt"
+rem Create output.txt with XML header
+echo ^<?xml version="1.0" encoding="UTF-8"?^>> "%OUTPUT_FOLDER%\output.txt"
+echo ^<files^>>> "%OUTPUT_FOLDER%\output.txt"
 
-rem Copy AndroidManifest.xml
-copy "app\src\main\AndroidManifest.xml" "%OUTPUT_FOLDER%\AndroidManifest.xml.txt"
+rem Process build.gradle.kts
+echo   ^<file name="build.gradle.kts"^>>> "%OUTPUT_FOLDER%\output.txt"
+echo     ^<![CDATA[>> "%OUTPUT_FOLDER%\output.txt"
+type "app\build.gradle.kts" >> "%OUTPUT_FOLDER%\output.txt"
+echo     ]]^>>> "%OUTPUT_FOLDER%\output.txt"
+echo   ^</file^>>> "%OUTPUT_FOLDER%\output.txt"
 
-rem Copy all files from java/com/example/blesensorviewer/ and add .txt extension
+rem Process AndroidManifest.xml
+echo   ^<file name="AndroidManifest.xml"^>>> "%OUTPUT_FOLDER%\output.txt"
+echo     ^<![CDATA[>> "%OUTPUT_FOLDER%\output.txt"
+type "app\src\main\AndroidManifest.xml" >> "%OUTPUT_FOLDER%\output.txt"
+echo     ]]^>>> "%OUTPUT_FOLDER%\output.txt"
+echo   ^</file^>>> "%OUTPUT_FOLDER%\output.txt"
+
+rem Process all files from java/com/example/blesensorviewer/
 for /r "app\src\main\java\com\example\blesensorviewer" %%F in (*) do (
-    set "FILENAME=%%~nxF"
-    copy "%%F" "%OUTPUT_FOLDER%\!FILENAME!.txt" > nul
+    echo   ^<file name="%%~nxF"^>>> "%OUTPUT_FOLDER%\output.txt"
+    echo     ^<![CDATA[>> "%OUTPUT_FOLDER%\output.txt"
+    type "%%F" >> "%OUTPUT_FOLDER%\output.txt"
+    echo     ]]^>>> "%OUTPUT_FOLDER%\output.txt"
+    echo   ^</file^>>> "%OUTPUT_FOLDER%\output.txt"
 )
 
-rem Copy all files from res/layout and add .txt extension
+rem Process all files from res/layout
 for %%F in ("app\src\main\res\layout\*") do (
-    copy "%%F" "%OUTPUT_FOLDER%\%%~nxF.txt" > nul
+    echo   ^<file name="%%~nxF"^>>> "%OUTPUT_FOLDER%\output.txt"
+    echo     ^<![CDATA[>> "%OUTPUT_FOLDER%\output.txt"
+    type "%%F" >> "%OUTPUT_FOLDER%\output.txt"
+    echo     ]]^>>> "%OUTPUT_FOLDER%\output.txt"
+    echo   ^</file^>>> "%OUTPUT_FOLDER%\output.txt"
 )
 
-rem Create combined.txt with XML-style tags
-echo ^<?xml version="1.0" encoding="UTF-8"?^>> "%OUTPUT_FOLDER%\combined.txt"
-echo ^<combined_files^>>> "%OUTPUT_FOLDER%\combined.txt"
+rem Close the XML root element
+echo ^</files^>>> "%OUTPUT_FOLDER%\output.txt"
 
-rem Add content of each file with XML tags
-for %%F in ("%OUTPUT_FOLDER%\*.txt") do (
-    echo   ^<file^>>> "%OUTPUT_FOLDER%\combined.txt"
-    echo     ^<filename^>%%~nxF^</filename^>>> "%OUTPUT_FOLDER%\combined.txt"
-    echo     ^<content^>>> "%OUTPUT_FOLDER%\combined.txt"
-    echo       ^<![CDATA[>> "%OUTPUT_FOLDER%\combined.txt"
-    type "%%F" >> "%OUTPUT_FOLDER%\combined.txt"
-    echo       ]]^>>> "%OUTPUT_FOLDER%\combined.txt"
-    echo     ^</content^>>> "%OUTPUT_FOLDER%\combined.txt"
-    echo   ^</file^>>> "%OUTPUT_FOLDER%\combined.txt"
-)
-
-echo ^</combined_files^>>> "%OUTPUT_FOLDER%\combined.txt"
-
-echo Files have been bundled in the %OUTPUT_FOLDER% folder and concatenated into combined.txt with XML tags.
+echo Files have been combined into %OUTPUT_FOLDER%\output.txt with XML tags.
